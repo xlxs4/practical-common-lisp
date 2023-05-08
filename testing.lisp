@@ -9,11 +9,11 @@
    other test functions or use 'check' to run individual test
    cases."
   `(defun ,name ,parameters
-     (let ((*test-name* (append *test-name* (list ',name))))
+     (let ((*test-name* (nconc *test-name* (list ',name))))
        ,@body)))
 
 (defmacro check (&body forms)
-  "Run each expresiion in 'forms' as a test case."
+  "Run each expression in 'forms' as a test case."
   `(combine-results
      ,@(loop for f in forms collect `(report-result ,f ',f))))
 
@@ -28,3 +28,20 @@
   "Report the results of a single test case. Called by 'check'."
   (format t "~:[FAIL~;pass~] ... ~a: ~a~%" result *test-name* form)
   result)
+
+;;; Example usage
+(deftest test-+ ()
+  (check
+    (= (+ 1 2) 3)
+    (= (+ 1 2 3) 5) ; FAIL for demonstration purposes
+    (= (+ -1 -3) -4)))
+
+(deftest test-* ()
+  (check
+    (= (* 2 2) 4)
+    (= (* 3 5) 15)))
+
+(deftest test-arithmetic ()
+  (combine-results
+    (test-+)
+    (test-*)))
