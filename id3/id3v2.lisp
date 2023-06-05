@@ -110,18 +110,18 @@
             :character-type (ucs-2-char-type #xfeff))))
 
 (define-binary-class id3-tag ()
-                     ((identifier (iso-8859-1-string :length 3))
-                      (major-version u1)
-                      (revision u1)
-                      (flags u1)
-                      (size id3-tag-size))
-                     (:dispatch
-                      (ecase major-version
-                        (2 'id3v2.2-tag)
-                        (3 'id3v2.3-tag))))
+  ((identifier (iso-8859-1-string :length 3))
+   (major-version u1)
+   (revision u1)
+   (flags u1)
+   (size id3-tag-size))
+  (:dispatch
+   (ecase major-version
+     (2 'id3v2.2-tag)
+     (3 'id3v2.3-tag))))
 
 (define-binary-class id3v2.2-tag (id3-tag)
-                     ((frames (id3-frames :tag-size size :frame-type 'id3v2.2-frame))))
+  ((frames (id3-frames :tag-size size :frame-type 'id3v2.2-frame))))
 
 (define-binary-type optional (type if)
   (:reader (in)
@@ -130,11 +130,11 @@
            (when if (write-value type out value))))
 
 (define-binary-class id3v2.3-tag (id3-tag)
-                     ((extended-header-size (optional :type 'u4 :if (extended-p flags)))
-                      (extra-flags (optional :type 'u2 :if (extended-p flags)))
-                      (padding-size (optional :type 'u4 :if (extended-p flags)))
-                      (crc (optional :type 'u4 :if (crc-p flags extra-flags)))
-                      (frames (id3-frames :tag-size size :frame-type 'id3v2.3-frame))))
+  ((extended-header-size (optional :type 'u4 :if (extended-p flags)))
+   (extra-flags (optional :type 'u2 :if (extended-p flags)))
+   (padding-size (optional :type 'u4 :if (extended-p flags)))
+   (crc (optional :type 'u4 :if (crc-p flags extra-flags)))
+   (frames (id3-frames :tag-size size :frame-type 'id3v2.3-frame))))
 
 (defun extended-p (flags) (logbitp 6 flags))
 
@@ -170,12 +170,12 @@
     (string= "ID3" (read-value 'iso-8859-1-string in :length 3))))
 
 (define-tagged-binary-class id3-frame ()
-                            ((id (frame-id :length 3))
-                             (size u3))
-                            (:dispatch (find-frame-class id)))
+  ((id (frame-id :length 3))
+   (size u3))
+  (:dispatch (find-frame-class id)))
 
 (define-binary-class generic-frame (id3-frame)
-                     ((data (raw-bytes :size size))))
+  ((data (raw-bytes :size size))))
 
 (define-binary-type raw-bytes (size)
   (:reader (in)
@@ -192,6 +192,8 @@
      (ecase (length name)
        (3 'text-info-frame-v2.2)
        (4 'text-info-frame-v2.3)))
+    ((string= name "COM") 'comment-frame-v2.2)
+    ((string= name "COMM") 'comment-frame-v2.3)
     (t
      (ecase (length name)
        (3 'generic-frame-v2.2)
@@ -232,18 +234,18 @@
 (defgeneric frame-header-size (frame))
 
 (define-tagged-binary-class id3v2.2-frame ()
-                            ((id (frame-id :length 3))
-                             (size u3))
-                            (:dispatch (find-frame-class id)))
+  ((id (frame-id :length 3))
+   (size u3))
+  (:dispatch (find-frame-class id)))
 
 (define-tagged-binary-class id3v2.3-frame ()
-                            ((id (frame-id :length 4))
-                             (size u4)
-                             (flags u2)
-                             (decompressed-size (optional :type 'u4 :if (frame-compressed-p flags)))
-                             (encryption-scheme (optional :type 'u1 :if (frame-encrypted-p flags)))
-                             (grouping-identity (optional :type 'u1 :if (frame-grouped-p flags))))
-                            (:dispatch (find-frame-class id)))
+  ((id (frame-id :length 4))
+   (size u4)
+   (flags u2)
+   (decompressed-size (optional :type 'u4 :if (frame-compressed-p flags)))
+   (encryption-scheme (optional :type 'u1 :if (frame-encrypted-p flags)))
+   (grouping-identity (optional :type 'u1 :if (frame-grouped-p flags))))
+  (:dispatch (find-frame-class id)))
 
 (defun frame-compressed-p (flags) (logbitp 7 flags))
 
@@ -256,7 +258,7 @@
 (defmethod frame-header-size ((frame id3v2.3-frame)) 10)
 
 (define-binary-class generic-frame ()
-                     ((data (raw-bytes :size (data-bytes (current-binary-object))))))
+  ((data (raw-bytes :size (data-bytes (current-binary-object))))))
 
 (defgeneric data-bytes (frame))
 
@@ -312,8 +314,8 @@
              (write-value type out string keyword arg))))
 
 (define-binary-class text-info-frame ()
-                     ((encoding u1)
-                      (information (id3-encoded-string :encoding encoding :length (bytes-left 1)))))
+  ((encoding u1)
+   (information (id3-encoded-string :encoding encoding :length (bytes-left 1)))))
 
 (defun bytes-left (bytes-read)
   (- (size (current-binary-object)) bytes-read))
@@ -321,3 +323,92 @@
 (define-binary-class text-info-frame-v2.2 (id3v2.2-frame text-info-frame) ())
 
 (define-binary-class text-info-frame-v2.3 (id3v2.3-frame text-info-frame) ())
+
+(define-binary-class comment-frame ()
+  ((encoding u1)
+   (language (iso-8859-1-string :length 3))
+   (description (id3-encoded-string :encoding encoding :terminator +null+))
+   (text (id3-encoded-string
+          :encoding encoding
+          :length (bytes-left
+                   (+ 1 ; encoding
+                      3 ; language
+                      (encoded-string-length description encoding t)))))))
+
+(defun encoded-string-length (string encoding terminated)
+  (let ((characters (+ (length string) (if terminated 1 0))))
+    (* characters (ecase encoding (0 1) (1 2)))))
+
+(define-binary-class comment-frame-v2.2 (id3v2.2-frame comment-frame) ())
+
+(define-binary-class comment-frame-v2.3 (id3v2.3-frame comment-frame) ())
+
+(defun upto-null (string)
+  (subseq string 0 (position +null+ string)))
+
+(defun find-frame (id3 ids)
+  (find-if #'(lambda (x) (find (id x) ids :test #'string=)) (frames id3)))
+
+(defun get-text-info (id3 &rest ids)
+  (let ((frame (find-frame id3 ids)))
+    (when frame (upto-null (information frame)))))
+
+(defun song (id3) (get-text-info id3 "TT2" "TIT2"))
+
+(defun album (id3) (get-text-info id3 "TAL" "TALB"))
+
+(defun artist (id3) (get-text-info id3 "TP1" "TPE1"))
+
+(defun track (id3) (get-text-info id3 "TRK" "TRCK"))
+
+(defun year (id3) (get-text-info id3 "TYE" "TYER" "TDRC"))
+
+(defun genre (id3) (get-text-info id3 "TCO" "TCON"))
+
+(defun translated-genre (id3)
+  (let ((genre (genre id3)))
+    (if (and genre (char= #\( (char genre 0)))
+        (translate-v1-genre genre)
+        genre)))
+
+(defun translate-v1-genre (genre)
+  (aref *id3-v1-genres* (parse-integer genre :start 1 :junk-allowed t)))
+
+(defparameter *id3-v1-genres*
+  #(
+    ;; These are the official ID3v1 genres.
+    "Blues" "Classic Rock" "Country" "Dance" "Disco" "Funk" "Grunge"
+    "Hip-Hop" "Jazz" "Metal" "New Age" "Oldies" "Other" "Pop" "R&B" "Rap"
+    "Reggae" "Rock" "Techno" "Industrial" "Alternative" "Ska"
+    "Death Metal" "Pranks" "Soundtrack" "Euro-Techno" "Ambient"
+    "Trip-Hop" "Vocal" "Jazz+Funk" "Fusion" "Trance" "Classical"
+    "Instrumental" "Acid" "House" "Game" "Sound Clip" "Gospel" "Noise"
+    "AlternRock" "Bass" "Soul" "Punk" "Space" "Meditative"
+    "Instrumental Pop" "Instrumental Rock" "Ethnic" "Gothic" "Darkwave"
+    "Techno-Industrial" "Electronic" "Pop-Folk" "Eurodance" "Dream"
+    "Southern Rock" "Comedy" "Cult" "Gangsta" "Top 40" "Christian Rap"
+    "Pop/Funk" "Jungle" "Native American" "Cabaret" "New Wave"
+    "Psychedelic" "Rave" "Showtunes" "Trailer" "Lo-Fi" "Tribal"
+    "Acid Punk" "Acid Jazz" "Polka" "Retro" "Musical" "Rock & Roll"
+    "Hard Rock"
+
+    ;; These were made up by the authors of Windamp but backported into
+    ;; the ID3 spec.
+    ;; These were made up by the authors of Winamp but backported into
+    ;; the ID3 spec.
+    "Folk" "Folk-Rock" "National Folk" "Swing" "Fast Fusion"
+    "Bebob" "Latin" "Revival" "Celtic" "Bluegrass" "Avantgarde"
+    "Gothic Rock" "Progressive Rock" "Psychedelic Rock" "Symphonic Rock"
+    "Slow Rock" "Big Band" "Chorus" "Easy Listening" "Acoustic" "Humor"
+    "Speech" "Chanson" "Opera" "Chamber Music" "Sonata" "Symphony"
+    "Booty Bass" "Primus" "Porn Groove" "Satire" "Slow Jam" "Club"
+    "Tango" "Samba" "Folklore" "Ballad" "Power Ballad" "Rhythmic Soul"
+    "Freestyle" "Duet" "Punk Rock" "Drum Solo" "A capella" "Euro-House"
+    "Dance Hall"
+    ;; These were also invented by the Winamp folks but ignored by the
+    ;; ID3 authors.
+    "Goa" "Drum & Bass" "Club-House" "Hardcore" "Terror" "Indie"
+    "BritPop" "Negerpunk" "Polsk Punk" "Beat" "Christian Gangsta Rap"
+    "Heavy Metal" "Black Metal" "Crossover" "Contemporary Christian"
+    "Christian Rock" "Merengue" "Salsa" "Thrash Metal" "Anime" "Jpop"
+    "Synthpop"))
